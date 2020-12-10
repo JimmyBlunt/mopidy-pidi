@@ -24,7 +24,7 @@ class PiDiConfig:
         self.spi_speed_mhz = 80
         self.backlight_pin = 13
         self.size = 240
-        self.blur_album_art = True
+        self.blur_album_art =  False
 
 
 class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
@@ -56,7 +56,7 @@ class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
                             break
                 if hostname is not None:
                     self.display.update(
-                        title=f"Visit http://{hostname}:{port} to select content."
+                        title=f""
                     )
                     self.display.update_album_art(art="")
 
@@ -131,7 +131,7 @@ class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
             artist = ", ".join([artist.name for artist in track.artists])
 
         self.display.update(title=title, album=album, artist=artist)
-
+        logger.info("upate_track-Titel current Track_  : " +  str(title)+ " Album:  " +  str(album)+ " Artist:  "+  str(artist))
         if time_position is not None:
             length = track.length
             # Default to 60s long and loop the transport bar
@@ -142,7 +142,12 @@ class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
             self.display.update(elapsed=float(time_position), length=float(length))
 
         art = None
+        if not track.uri.startswith("spotify"):
+            logger.info("upate_track-track.uri not starting with spotify!: " +  str(track.uri))
+            
         track_images = self.core.library.get_images([track.uri]).get()
+        logger.info("upate_track-track_images: " +  str(track_images))
+        logger.info("upate_track-track.uri: " +  str(track.uri))
         if track.uri in track_images:
             track_images = track_images[track.uri]
             if len(track_images) == 1:
@@ -153,8 +158,12 @@ class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
                         continue
                     if image.height >= 240 and image.width >= 240:
                         art = image.uri
-
+        if not track.uri.startswith("spotify"):
+            logger.info("upate_track-track.uri not starting with spotify!: " +  str(track.uri))
+            art="STREAM"+str(track.uri) 
+            logger.info("upate_track-track.uri.strattrswith spotify!:STREAM+art " +  str(art))
         self.display.update_album_art(art=art)
+        logger.info("upate_track--update_album_art(art=art: " +  str(track.uri))
 
     def tracklist_changed(self):
         pass
@@ -214,33 +223,58 @@ class PiDi:
         if art != self._last_art:
             self._display.update_album_art(art)
             self._last_art = art
-
+	
     def update_album_art(self, art=None):
         _album = self.title if self.album is None or self.album == "" else self.album
-
+        cache_dir="/var/lib/mopidy/pidi/"
+        logger.info("update_album_art: _album: " +  str(art))
+        logger.info("update_album_art: _album: " +  str(_album))
         if art is not None:
+	    #if  track.uri.startswith("spotify"):
+            #    logger.info("upate_album_art:track .uri not starting with spotify!: " +  str(track.uri))
             if os.path.isfile(art):
+                logger.info("update_album_art:os_path_isfile art: " +  str(art))
                 # Art is already a locally cached file we can use
                 self._handle_album_art(art)
                 return
+            elif art.startswith("STREAM") :
+                  file_name = "f"+str(_album)+".jpg"
+                  file_name1 = cache_dir+file_name
+                  logger.info("update_album-art: art.startswith STREAM Cleartexfile.filname fAlbum.jpg" + str(file_name))
+                  logger.info("update_album-art: Cleartexfile.filname1 chache_dir/fAlbum.jpg" + str(file_name1))
+                  if os.path.isfile(file_name) :
+                    # If a cached file already exists, use it!
+                      self._handle_album_art(file_name)
+                      logger.info("update_album-art: Ccached file already exists, use it" + str(file_name))
+                      return 
+                  if os.path.isfile(file_name1):
+                     # If a cached file already exists, use it!
+                      logger.info("update_album-art: Ccached file1 already exists, use it" + str(file_name1))
+                      self._handle_album_art(file_name1)
+                      return
+
 
             elif art.startswith("http://") or art.startswith("https://"):
                 file_name = self._brainz.get_cache_file_name(art)
-
+                logger.info("file_name_startsWithHTTP_: filen_ame " +  str(file_name))
                 if os.path.isfile(file_name):
+                    logger.info("file_name_startsWithHTTP_:  cached file already exists, use it! filen_ame " +  str(file_name))
                     # If a cached file already exists, use it!
                     self._handle_album_art(file_name)
                     return
-
+               
                 else:
+                    logger.info("file_name_startsWithHTTP_:  cached file doe NOT exists, request the URL and save it! request: " +  str(requests.get(art)))
                     # Otherwise, request the URL and save it!
                     response = requests.get(art)
+                    logger.info("file_name_startsWithHTTP_: response.. requests.get(art) " +  str(response)) 
                     if response.status_code == 200:
+                        logger.info("file_name_startsWithHTTP_: response.. 200 response content and file_name " +  str(response.content)+ "  " + str(file_name))
                         self._brainz.save_album_art(response.content, file_name)
                         self._handle_album_art(file_name)
-                        return
-
+                        return 
         art = self._brainz.get_album_art(self.artist, _album, self._handle_album_art)
+        logger.info("update_album_art ART = " + str(art))
 
     def update(self, **kwargs):
         self.shuffle = kwargs.get("shuffle", self.shuffle)
